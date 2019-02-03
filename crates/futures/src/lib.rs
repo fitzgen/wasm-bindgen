@@ -112,8 +112,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use futures::executor::{self, Notify, Spawn};
-use futures::prelude::*;
 use futures::future;
+use futures::prelude::*;
 use futures::sync::oneshot;
 use js_sys::{Function, Promise};
 use wasm_bindgen::prelude::*;
@@ -207,6 +207,28 @@ where
     F: Future<Item = JsValue, Error = JsValue> + 'static,
 {
     _future_to_promise(Box::new(future))
+}
+
+/// A convenience method to spawn a Rust `Future` where you don't need the
+/// result as a JavaScript `Promise`.
+///
+/// The `Future::Item` and `Future::Error` associated types are `()` because the
+/// intent is that this is for spawning "complete" tasks, that culminate in some
+/// sort of I/O or side effect and don't need to return any values since the
+/// values are ignored anyways. Once we migrate to futures 0.3, this will become
+/// `Future<Output = ()>` and you will have had to handle any infallibility
+/// explicitly as well.
+///
+/// # Panics
+///
+/// See `future_to_promise`'s documentation.
+pub fn spawn<F>(future: F)
+where
+    F: 'static + Future<Item = (), Error = ()>,
+{
+    _future_to_promise(Box::new(
+        future.map(|_| JsValue::null()).map_err(|_| JsValue::null()),
+    ));
 }
 
 // Implementation of actually transforming a future into a JavaScript `Promise`.
@@ -389,7 +411,7 @@ fn _future_to_promise(future: Box<Future<Item = JsValue, Error = JsValue>>) -> P
 /// This function has the same panic behavior as `future_to_promise`.
 pub fn spawn_local<F>(future: F)
 where
-    F: Future<Item=(), Error=()> + 'static,
+    F: Future<Item = (), Error = ()> + 'static,
 {
     future_to_promise(
         future
