@@ -9,10 +9,10 @@ use std::marker::Unsize;
 use std::mem::{self, ManuallyDrop};
 use std::prelude::v1::*;
 
-use JsValue;
 use convert::*;
 use describe::*;
 use throw_str;
+use JsValue;
 
 /// A handle to both a closure in Rust as well as JS closure which will invoke
 /// the Rust closure.
@@ -28,10 +28,10 @@ use throw_str;
 /// location in your program.
 ///
 /// The type parameter on `Closure` is the type of closure that this represents.
-/// Currently this can only be the `Fn` and `FnMut` traits with up to 7
-/// arguments (and an optional return value). The arguments/return value of the
-/// trait must be numbers like `u32` for now, although this restriction may be
-/// lifted in the future!
+/// Currently this can only be the `Fn`, `FnMut`, and `FnOnce` traits with up to
+/// 7 arguments (and an optional return value). The arguments/return value of
+/// the trait must be numbers like `u32` for now, although this restriction may
+/// be lifted in the future!
 ///
 /// # Example
 ///
@@ -40,7 +40,7 @@ use throw_str;
 /// ```rust,no_run
 /// #[wasm_bindgen]
 /// extern "C" {
-///     fn setTimeout(closure: &Closure<FnMut()>, time: u32);
+///     fn setTimeout(closure: &Closure<FnOnce()>, time: u32);
 ///
 ///     #[wasm_bindgen(js_namespace = console)]
 ///     fn log(s: &str);
@@ -55,7 +55,7 @@ use throw_str;
 ///     // a JS closure.
 ///     let cb = Closure::wrap(Box::new(move || {
 ///         log("timeout elapsed!");
-///     }) as Box<FnMut()>);
+///     }) as Box<FnOnce()>);
 ///
 ///     // Next we pass this via reference to the `setTimeout` function, and
 ///     // `setTimeout` gets a handle to the corresponding JS closure.
@@ -77,7 +77,7 @@ use throw_str;
 /// use wasm_bindgen::JsCast;
 ///
 /// #[wasm_bindgen]
-/// pub struct ClosureHandle(Closure<FnMut()>);
+/// pub struct ClosureHandle(Closure<FnOnce()>);
 ///
 /// #[wasm_bindgen]
 /// pub fn run() -> ClosureHandle {
@@ -109,14 +109,15 @@ union FatPtr<T: ?Sized> {
 }
 
 impl<T> Closure<T>
-    where T: ?Sized + WasmClosure,
+where
+    T: ?Sized + WasmClosure,
 {
     /// Creates a new instance of `Closure` from the provided Rust closure.
     ///
     /// Note that the closure provided here, `F`, has a few requirements
     /// associated with it:
     ///
-    /// * It must implement `Fn` or `FnMut`
+    /// * It must implement `Fn`, `FnMut`, or `FnOnce`
     /// * It must be `'static`, aka no stack references (use the `move` keyword)
     /// * It can have at most 7 arguments
     /// * Its arguments and return values are all wasm types like u32/f64.
@@ -129,7 +130,8 @@ impl<T> Closure<T>
     /// should use `Closure::wrap`.*
     #[cfg(feature = "nightly")]
     pub fn new<F>(t: F) -> Closure<T>
-        where F: Unsize<T> + 'static
+    where
+        F: Unsize<T> + 'static,
     {
         Closure::wrap(Box::new(t) as Box<T>)
     }
@@ -141,7 +143,10 @@ impl<T> Closure<T>
     pub fn wrap(mut data: Box<T>) -> Closure<T> {
         assert_eq!(mem::size_of::<*const T>(), mem::size_of::<FatPtr<T>>());
         let (a, b) = unsafe {
-            FatPtr { ptr: &mut *data as *mut T }.fields
+            FatPtr {
+                ptr: &mut *data as *mut T,
+            }
+            .fields
         };
 
         // Here we need to create a `JsValue` with the data and `T::invoke()`
@@ -194,20 +199,11 @@ impl<T> Closure<T>
         }
 
         #[inline(never)]
-        unsafe fn breaks_if_inlined<T: WasmClosure + ?Sized>(
-            a: usize,
-            b: usize,
-        ) -> u32 {
-            super::__wbindgen_describe_closure(
-                a as u32,
-                b as u32,
-                describe::<T> as u32,
-            )
+        unsafe fn breaks_if_inlined<T: WasmClosure + ?Sized>(a: usize, b: usize) -> u32 {
+            super::__wbindgen_describe_closure(a as u32, b as u32, describe::<T> as u32)
         }
 
-        let idx = unsafe {
-            breaks_if_inlined::<T>(a, b)
-        };
+        let idx = unsafe { breaks_if_inlined::<T>(a, b) };
 
         Closure {
             js: ManuallyDrop::new(JsValue::_new(idx)),
@@ -241,7 +237,8 @@ impl<T: ?Sized> AsRef<JsValue> for Closure<T> {
 }
 
 impl<T> WasmDescribe for Closure<T>
-    where T: WasmClosure + ?Sized,
+where
+    T: WasmClosure + ?Sized,
 {
     fn describe() {
         inform(ANYREF);
@@ -250,7 +247,8 @@ impl<T> WasmDescribe for Closure<T>
 
 // `Closure` can only be passed by reference to imports.
 impl<'a, T> IntoWasmAbi for &'a Closure<T>
-    where T: WasmClosure + ?Sized,
+where
+    T: WasmClosure + ?Sized,
 {
     type Abi = u32;
 
@@ -270,7 +268,8 @@ fn _check() {
 }
 
 impl<T> Drop for Closure<T>
-    where T: ?Sized,
+where
+    T: ?Sized,
 {
     fn drop(&mut self) {
         unsafe {
@@ -308,7 +307,7 @@ pub unsafe trait WasmClosure: 'static {
 
 macro_rules! doit {
     ($(
-        ($($var:ident)*)
+        ($cnt:tt $($var:ident)*)
     )*) => ($(
         unsafe impl<$($var,)* R> WasmClosure for Fn($($var),*) -> R
             where $($var: FromWasmAbi + 'static,)*
@@ -352,7 +351,8 @@ macro_rules! doit {
                 }
                 inform(destroy::<$($var,)* R> as u32);
 
-                <&Self>::describe();
+                inform(FN);
+                <Self as WasmDescribe>::describe();
             }
         }
 
@@ -399,19 +399,126 @@ macro_rules! doit {
                 }
                 inform(destroy::<$($var,)* R> as u32);
 
-                <&mut Self>::describe();
+                inform(FN_MUT);
+                <Self as WasmDescribe>::describe();
             }
         }
+
+        // unsafe impl<T, $($var,)* R> WasmClosure for T
+        //     where T: 'static + FnOnce($($var),*) -> R,
+        //           $($var: FromWasmAbi + 'static,)*
+        //           R: ReturnWasmAbi + 'static,
+        // {
+        //     fn describe() {
+        //         #[allow(non_snake_case)]
+        //         unsafe extern "C" fn invoke<T, $($var: FromWasmAbi,)* R: ReturnWasmAbi>(
+        //             a: usize,
+        //             b: usize,
+        //             $($var: <$var as FromWasmAbi>::Abi),*
+        //         ) -> <R as ReturnWasmAbi>::Abi
+        //             where T: FnOnce($($var,)*) -> R,
+        //         {
+        //             if a == 0 {
+        //                 throw_str("closure invoked recursively or destroyed already");
+        //             }
+
+        //             // Make sure all stack variables are converted before we
+        //             // convert `ret` as it may throw (for `Result`, for example)
+        //             let ret = {
+        //                 let f: *const FnOnce($($var),*) -> R =
+        //                     FatPtr { fields: (a, b) }.ptr;
+        //                 let f: Box<FnOnce($($var,)*) -> R> = mem::transmute(f);
+        //                 let mut _stack = GlobalStack::new();
+        //                 $(
+        //                     let $var = <$var as FromWasmAbi>::from_abi($var, &mut _stack);
+        //                 )*
+        //                 f($($var),*)
+        //             };
+        //             ret.return_abi(&mut GlobalStack::new())
+        //         }
+        //         inform(invoke::<T, $($var,)* R> as u32);
+
+        //         unsafe extern fn destroy<T>(
+        //             a: usize,
+        //             b: usize,
+        //         ) {
+        //             debug_assert!(a != 0);
+        //             drop(Box::from_raw(FatPtr::<T> {
+        //                 fields: (a, b)
+        //             }.ptr));
+        //         }
+        //         inform(destroy::<T> as u32);
+
+        //         inform(FN_ONCE);
+
+        //         // HACK: inline closure type's WasmDescribe here since it needs
+        //         // to be monomorphised for FnOnce, unlike other kinds of
+        //         // closures, but FnOnce closures don't also implement IntoWasm
+        //         // and all that stuff.
+        //         inform(FUNCTION);
+        //         inform(invoke::<T, $($var,)* R> as u32);
+        //         inform($cnt);
+        //         $(<$var as WasmDescribe>::describe();)*
+        //         <R as WasmDescribe>::describe();
+        //     }
+        // }
     )*)
 }
 
 doit! {
-    ()
-    (A)
-    (A B)
-    (A B C)
-    (A B C D)
-    (A B C D E)
-    (A B C D E F)
-    (A B C D E F G)
+    (0)
+    (1 A)
+    (2 A B)
+    (3 A B C)
+    (4 A B C D)
+    (5 A B C D E)
+    (6 A B C D E F)
+    (7 A B C D E F G)
+}
+
+unsafe impl<T, A, R> WasmClosure for T
+where
+    T: 'static + FnOnce(A) -> R,
+    A: FromWasmAbi + 'static,
+    R: ReturnWasmAbi + 'static,
+{
+    fn describe() {
+        #[allow(non_snake_case)]
+        unsafe extern "C" fn invoke<T, A: FromWasmAbi, R: ReturnWasmAbi>(
+            a: usize,
+            b: usize,
+            A: <A as FromWasmAbi>::Abi,
+        ) -> <R as ReturnWasmAbi>::Abi
+        where
+            T: FnOnce(A) -> R,
+        {
+            if a == 0 {
+                throw_str("closure invoked recursively or destroyed already");
+            }
+            let ret = {
+                let f: *const FnOnce(A) -> R = FatPtr { fields: (a, b) }.ptr;
+                let f: Box<FnOnce(A) -> R> = mem::transmute(f);
+                let mut _stack = GlobalStack::new();
+                let A = <A as FromWasmAbi>::from_abi(A, &mut _stack);
+                f(A)
+            };
+            ret.return_abi(&mut GlobalStack::new())
+        }
+        inform(invoke::<T, A, R> as u32);
+        unsafe extern "C" fn destroy<T>(a: usize, b: usize) {
+            if true {
+                if !(a != 0) {
+                    panic!()
+                };
+            };
+            drop(Box::from_raw(FatPtr::<T> { fields: (a, b) }.ptr));
+        }
+        inform(destroy::<T> as u32);
+        inform(FN_ONCE);
+        inform(FUNCTION);
+        inform(invoke::<T, A, R> as u32);
+        inform(1);
+        <A as WasmDescribe>::describe();
+        <R as WasmDescribe>::describe();
+    }
 }

@@ -9,7 +9,7 @@
 //! through values into the final `Closure` object. More details about how all
 //! this works can be found in the code below.
 
-use crate::descriptor::Descriptor;
+use crate::descriptor::{ClosureKind, Descriptor};
 use crate::js::js2rust::Js2Rust;
 use crate::js::Context;
 use failure::Error;
@@ -180,18 +180,23 @@ impl ClosureDescriptors {
 
             let (js, _ts, _js_doc) = {
                 let mut builder = Js2Rust::new("", input);
-                builder.prelude("this.cnt++;");
-                if closure.mutable {
-                    builder
-                        .prelude("let a = this.a;\n")
-                        .prelude("this.a = 0;\n")
-                        .rust_argument("a")
-                        .rust_argument("b")
-                        .finally("this.a = a;\n");
-                } else {
-                    builder.rust_argument("this.a").rust_argument("b");
+                builder
+                    .prelude("this.cnt++;\n")
+                    .prelude("const a = this.a;\n")
+                    .rust_argument("a")
+                    .rust_argument("b");
+                if closure.kind == ClosureKind::FnMut || closure.kind == ClosureKind::FnOnce {
+                    // The function is not re-entrant, so zero out `a`.
+                    builder.prelude("this.a = 0;\n");
+                    if closure.kind == ClosureKind::FnMut {
+                        // The function can be called again after it returns, so
+                        // restor `a` again.
+                        builder.finally("this.a = a;\n");
+                    }
                 }
-                builder.finally("if (this.cnt-- == 1) d(this.a, b);");
+                if closure.kind != ClosureKind::FnOnce {
+                    builder.finally("if (this.cnt-- == 1) d(a, b);");
+                }
                 builder.process(&closure.function)?.finish("function", "f")
             };
             input.expose_add_heap_object();

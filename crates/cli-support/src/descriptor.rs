@@ -36,6 +36,9 @@ tys! {
     OPTIONAL
     UNIT
     CLAMPED
+    FN
+    FN_MUT
+    FN_ONCE
 }
 
 #[derive(Debug)]
@@ -79,7 +82,14 @@ pub struct Closure {
     pub shim_idx: u32,
     pub dtor_idx: u32,
     pub function: Function,
-    pub mutable: bool,
+    pub kind: ClosureKind,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ClosureKind {
+    Fn,
+    FnMut,
+    FnOnce,
 }
 
 #[derive(Copy, Clone)]
@@ -298,13 +308,25 @@ impl Closure {
     fn decode(data: &mut &[u32]) -> Closure {
         let shim_idx = get(data);
         let dtor_idx = get(data);
-        let mutable = get(data) == REFMUT;
+        let kind = ClosureKind::decode(data);
         assert_eq!(get(data), FUNCTION);
+        let function = Function::decode(data);
         Closure {
             shim_idx,
             dtor_idx,
-            mutable,
-            function: Function::decode(data),
+            kind,
+            function,
+        }
+    }
+}
+
+impl ClosureKind {
+    fn decode(data: &mut &[u32]) -> ClosureKind {
+        match get(data) {
+            k if k == FN => ClosureKind::Fn,
+            k if k == FN_MUT => ClosureKind::FnMut,
+            k if k == FN_ONCE => ClosureKind::FnOnce,
+            k => panic!("Unexpected closure kind descriptor: {}", k),
         }
     }
 }

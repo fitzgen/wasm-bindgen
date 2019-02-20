@@ -6,7 +6,7 @@ use describe::{inform, WasmDescribe, FUNCTION};
 use throw_str;
 
 macro_rules! stack_closures {
-    ($( ($cnt:tt $invoke:ident $invoke_mut:ident $($var:ident)*) )*) => ($(
+    ($( ($cnt:tt $invoke:ident $invoke_mut:ident $invoke_once:ident $($var:ident)*) )*) => ($(
         impl<'a, 'b, $($var,)* R> IntoWasmAbi for &'a (Fn($($var),*) -> R + 'b)
             where $($var: FromWasmAbi,)*
                   R: ReturnWasmAbi
@@ -104,16 +104,17 @@ macro_rules! stack_closures {
                 <R as WasmDescribe>::describe();
             }
         }
+
     )*)
 }
 
 stack_closures! {
-    (0 invoke0 invoke0_mut)
-    (1 invoke1 invoke1_mut A)
-    (2 invoke2 invoke2_mut A B)
-    (3 invoke3 invoke3_mut A B C)
-    (4 invoke4 invoke4_mut A B C D)
-    (5 invoke5 invoke5_mut A B C D E)
-    (6 invoke6 invoke6_mut A B C D E F)
-    (7 invoke7 invoke7_mut A B C D E F G)
+    (0 invoke0 invoke0_mut invoke0_once)
+    (1 invoke1 invoke1_mut invoke1_once A)
+    (2 invoke2 invoke2_mut invoke2_once A B)
+    (3 invoke3 invoke3_mut invoke3_once A B C)
+    (4 invoke4 invoke4_mut invoke4_once A B C D)
+    (5 invoke5 invoke5_mut invoke5_once A B C D E)
+    (6 invoke6 invoke6_mut invoke6_once A B C D E F)
+    (7 invoke7 invoke7_mut invoke7_once A B C D E F G)
 }

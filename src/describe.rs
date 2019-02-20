@@ -41,6 +41,9 @@ tys! {
     OPTIONAL
     UNIT
     CLAMPED
+    FN
+    FN_MUT
+    FN_ONCE
 }
 
 #[inline(always)] // see `interpret.rs` in the the cli-support crate
